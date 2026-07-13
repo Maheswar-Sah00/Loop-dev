@@ -1,5 +1,6 @@
 import {
   Agent,
+  createMCPToolStaticFilter,
   MCPServerStreamableHttp,
   run,
   setDefaultOpenAIClient,
@@ -24,7 +25,10 @@ setOpenAIAPI('chat_completions');
 setTracingDisabled(true);
 
 // A tool-calling capable Groq model (needed for the emoji + MCP tools).
-// llama-3.3-70b emits malformed tool calls on Groq; gpt-oss-120b is reliable.
+// gpt-oss-120b is the most reliable free Groq model for the emoji tool and plain
+// conversation. It can occasionally mangle the Slack MCP tools' long names (Groq
+// then 400s); runAgent() catches that and retries without MCP, so a mangled tool
+// call degrades to a normal reply instead of a user-facing error.
 const MODEL = 'openai/gpt-oss-120b';
 
 const SYSTEM_PROMPT = `\
@@ -70,6 +74,12 @@ Also use them when the user explicitly asks you to perform a Slack action.`;
 
 const SLACK_MCP_URL = 'https://mcp.slack.com/mcp';
 
+// The Slack MCP server exposes 13 tools; their combined schemas (~10k tokens)
+// blow past Groq's free-tier per-minute token limit. Load only the tools we
+// actually use so requests stay under the cap. Widen this list if you move to
+// a higher-limit tier.
+const MCP_ALLOWED_TOOLS = ['slack_search_public_and_private', 'slack_read_channel', 'slack_send_message'];
+
 export const starterAgent = new Agent({
   name: 'Starter Agent',
   instructions: SYSTEM_PROMPT,
@@ -88,12 +98,20 @@ export async function runAgent(inputItems, deps) {
     const mcpServer = new MCPServerStreamableHttp({
       url: SLACK_MCP_URL,
       requestInit: { headers: { Authorization: `Bearer ${deps.userToken}` } },
+      toolFilter: createMCPToolStaticFilter({ allowed: MCP_ALLOWED_TOOLS }),
     });
 
     try {
       await mcpServer.connect();
       const agentWithMcp = starterAgent.clone({ mcpServers: [mcpServer] });
       return await run(agentWithMcp, inputItems, { context: deps });
+    } catch (e) {
+      // Free Groq models can occasionally emit a malformed/mis-named call for the
+      // Slack MCP tools (Groq returns a 400). Rather than surface that to the user,
+      // fall back to the plain agent so they always get a clean, useful reply.
+      const err = /** @type {any} */ (e);
+      console.error(`[agent] MCP path failed — retrying without MCP: ${err?.message || err}`);
+      return await run(starterAgent, inputItems, { context: deps });
     } finally {
       await mcpServer.close();
     }
