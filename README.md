@@ -44,7 +44,41 @@ message → classify (need / offer / neither)
         → status / outcome tracking + App Home dashboard
 ```
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full diagram.
+The full pipeline, rendered:
+
+```mermaid
+flowchart TD
+    A[Slack Events API<br/>message.channels] --> B{Message Classifier<br/>Groq · gpt-oss-120b}
+    B -->|neither| Z[Ignore silently]
+    B -->|offer| C[(Offer Memory<br/>SQLite)]
+    B -->|need| D[(Need intake<br/>SQLite · status=open)]
+
+    D --> E[RTS Search<br/>assistant.search.context<br/>user token]
+    E -->|unavailable| E2[search.messages<br/>fallback]
+    C -.remembered offers.-> F
+    E -.candidates.-> F
+    E2 -.candidates.-> F
+
+    F{Candidate Ranker<br/>Groq}
+    F -->|no genuine fit| N[status: no_match]
+    F -->|medium / high fit| G[Block Kit Match Card<br/>posted in thread]
+
+    G --> H[Human Confirm<br/>'Ask ‹name›']
+    H --> I[Private Consent DM<br/>requester identity hidden]
+    I -->|Happy to help| J[Introduction<br/>requester ↔ volunteer]
+    I -->|Not right now| K[status: open again]
+
+    J --> L[(Status / Outcome<br/>tracking · SQLite)]
+    K --> L
+    N --> L
+    L --> M[App Home Dashboard<br/>needs · connections · offers]
+```
+
+**Key design choice:** the LLM is used only for two narrow, verifiable jobs —
+**classify** and **rank**. The actual matching *substrate* is the community's own
+Slack history, surfaced by **Real-Time Search**. The "tool" isn't a search box;
+it's a **consent-first state machine** that manages a sensitive human introduction
+safely.
 
 ## Tech stack
 
