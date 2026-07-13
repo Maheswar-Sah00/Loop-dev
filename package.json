@@ -1,0 +1,24 @@
+{
+  "name": "loop-dev",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "check": "npx tsc --checkJs --noEmit --skipLibCheck --esModuleInterop --target esnext --module nodenext --moduleResolution nodenext app.js",
+    "start": "node app.js",
+    "lint": "npx @biomejs/biome check .",
+    "lint:fix": "npx @biomejs/biome check --write .",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@google/genai": "^2.11.0",
+    "@openai/agents": "^0.13.0",
+    "@slack/bolt": "^4.7.3",
+    "dotenv": "~17.4.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
+    "@slack/cli-hooks": "^1.3.3",
+    "typescript": "^6.0.3"
+  }
+}
