@@ -1,310 +1,121 @@
-# Starter Agent for Slack (Bolt for JavaScript and OpenAI Agents SDK)
+# Loop
 
-A minimal starter template for building AI-powered Slack agents with [Bolt for JavaScript](https://docs.slack.dev/tools/bolt-js/) and [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/) using models from [OpenAI](https://openai.com). Works with the [Slack MCP Server](https://github.com/slackapi/slack-mcp-server) to search messages, read channels, send messages, and manage canvases — all from within your agent.
+**A Slack-native mutual-aid matching agent for communities and nonprofits.**
 
-## App Overview
+Loop quietly reads the everyday messages in a community's Slack, notices when
+someone needs help and when someone offers it, and connects the two — with a
+human in the loop and consent before any introduction is made.
 
-The starter agent interacts with users through four entry points:
+---
 
-* **App Home** — Displays a welcome message with instructions on how to interact.
-* **Direct Messages** — Users message the agent directly. It responds in-thread, maintaining context across follow-ups.
-* **Channel @mentions** — Mention the agent in any channel to get a response without leaving the conversation.
-* **Assistant Panel** — Users click _Add Agent_ in Slack, select the agent, and pick from suggested prompts or type a message.
+## The problem
 
-The template also includes one example tool (emoji reactions). Add your own tools to customize it for your use case.
+In mutual-aid groups, nonprofits, and support communities, help genuinely
+exists — but it's scattered. An offer of "I can drive people to clinic
+appointments on weekday mornings" gets posted on Tuesday and buried by Thursday.
+A week later someone asks for exactly that in a different channel, and never sees
+it. The willingness is there; the **connection across time and channels** is not.
 
-### Slack MCP Server
+## What Loop does
 
-When connected to the [Slack MCP Server](https://github.com/slackapi/slack-mcp-server), the agent can search messages and files, read channel history and threads, send and schedule messages, and create and update canvases. When deployed with OAuth (HTTP mode), the agent automatically connects to the Slack MCP Server using the user's token.
+Loop turns the community's own conversation into a living directory of help:
+
+1. **Listens** to messages across channels it's in.
+2. **Classifies** each one as a *need*, an *offer*, or *neither* (Groq LLM).
+3. **Remembers** offers in a local store so they're matchable later.
+4. When a **need** appears, it **searches the community's real history** using
+   Slack Real-Time Search, then **ranks** the best few helpers.
+5. Posts a calm **match card** in the thread — a human picks who to reach out to.
+6. **Asks the chosen volunteer privately**, without revealing the requester,
+   and only introduces the two people **after the volunteer says yes**.
+
+Nothing is auto-matched behind people's backs. Loop suggests; humans decide.
+
+## How it works (the flow)
+
+```
+message → classify (need / offer / neither)
+        → offer memory (SQLite)
+        → RTS search over community history (user token)
+        → rank candidates (Groq)
+        → Block Kit match card (human confirms)
+        → private consent DM to the volunteer (identity hidden)
+        → introduction in-thread (requester ↔ volunteer)
+        → status / outcome tracking + App Home dashboard
+```
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full diagram.
+
+## Tech stack
+
+| Piece | Choice |
+|---|---|
+| Slack framework | **Bolt for JavaScript** (Socket Mode) |
+| Language model | **Groq** — open-weight `gpt-oss-120b`, via the OpenAI-compatible endpoint |
+| Search / matching substrate | **Slack Real-Time Search** — `assistant.search.context`, with `search.messages` as a graceful fallback |
+| Storage | **SQLite** (`better-sqlite3`) — offers, needs, and match state |
+| Interface | Block Kit cards, private DMs, and an **App Home** dashboard |
+
+The LLM does two narrow jobs (classify, then rank). The matching *substrate* —
+the community's real message history — is provided by Slack RTS.
 
 ## Setup
 
-Before getting started, make sure you have a development workspace where you have permissions to install apps.
+**Prerequisites:** Node.js 20+, a Slack workspace where you can install apps, and
+a free [Groq API key](https://console.groq.com).
 
-### Developer Program
+1. **Create the Slack app** from [`manifest.json`](./manifest.json)
+   (api.slack.com/apps → *From an app manifest*), then install it.
+2. **Install dependencies:**
+   ```sh
+   npm install
+   ```
+3. **Configure `.env`** (copy from `.env.sample`):
+   ```sh
+   GROQ_API_KEY=your_groq_key          # required — classifier + ranker
+   SLACK_BOT_TOKEN=xoxb-...             # required — post cards, open DMs
+   SLACK_APP_TOKEN=xapp-...             # required — Socket Mode (connections:write)
+   SLACK_USER_TOKEN=xoxp-...            # required — Real-Time Search
+   ```
+4. **Invite the bot** to the channels it should watch (`/invite @loop`).
+5. *(Optional)* Seed realistic history for a demo:
+   ```sh
+   node scripts/seed.js
+   ```
 
-Join the [Slack Developer Program](https://api.slack.com/developer-program) for exclusive access to sandbox environments for building and testing your apps, tooling, and resources created to help you build and grow.
-
-### Create the Slack app
-
-<details><summary><strong>Using Slack CLI</strong></summary>
-
-Install the latest version of the Slack CLI for your operating system:
-
-* [Slack CLI for macOS & Linux](https://docs.slack.dev/tools/slack-cli/guides/installing-the-slack-cli-for-mac-and-linux/)
-* [Slack CLI for Windows](https://docs.slack.dev/tools/slack-cli/guides/installing-the-slack-cli-for-windows/)
-
-You'll also need to log in if this is your first time using the Slack CLI.
-
-```sh
-slack login
-```
-
-#### Initializing the project
-
-```sh
-slack create my-starter-agent --template slack-samples/bolt-js-starter-agent --subdir openai-agents-sdk
-cd my-starter-agent
-```
-
-</details>
-
-<details><summary><strong>Using App Settings</strong></summary>
-
-#### Create Your Slack App
-
-1. Open [https://api.slack.com/apps/new](https://api.slack.com/apps/new) and choose "From an app manifest"
-2. Choose the workspace you want to install the application to
-3. Copy the contents of [manifest.json](./manifest.json) into the text box that says `*Paste your manifest code here*` (within the JSON tab) and click _Next_
-4. Review the configuration and click _Create_
-5. Click _Install to Workspace_ and _Allow_ on the screen that follows. You'll then be redirected to the App Configuration dashboard.
-
-#### Environment Variables
-
-Before you can run the app, you'll need to store some environment variables.
-
-1. Rename `.env.sample` to `.env`.
-2. Open your apps setting page from [this list](https://api.slack.com/apps), click _OAuth & Permissions_ in the left hand menu, then copy the _Bot User OAuth Token_ into your `.env` file under `SLACK_BOT_TOKEN`.
+## Run
 
 ```sh
-SLACK_BOT_TOKEN=YOUR_SLACK_BOT_TOKEN
-```
-
-3. Click _Basic Information_ from the left hand menu and follow the steps in the _App-Level Tokens_ section to create an app-level token with the `connections:write` scope. Copy that token into your `.env` as `SLACK_APP_TOKEN`.
-
-```sh
-SLACK_APP_TOKEN=YOUR_SLACK_APP_TOKEN
-```
-
-#### Initializing the project
-
-```sh
-git clone https://github.com/slack-samples/bolt-js-starter-agent.git my-starter-agent
-cd my-starter-agent/openai-agents-sdk
-```
-
-</details>
-
-#### Install dependencies
-
-```sh
-npm install
-```
-
-## Providers
-
-### OpenAI Setup
-
-This app uses OpenAI's `gpt-4.1-mini` model through the OpenAI Agents SDK.
-
-1. Create an API key from your [OpenAI dashboard](https://platform.openai.com/api-keys).
-2. Rename `.env.sample` to `.env`.
-3. Save the OpenAI API key to `.env`:
-
-```sh
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-```
-
-## Development
-
-### Starting the app
-
-<details><summary><strong>Using the Slack CLI</strong></summary>
-
-#### Slack CLI
-
-```sh
+npm start          # Socket Mode
+# or, with the Slack CLI:
 slack run
 ```
 
-</details>
+You should see `Starter Agent is running!` and `[db] SQLite initialized`.
+Post an offer, then a matching need, in a channel the bot is in — and watch the
+match card appear.
 
-<details><summary><strong>Using the Terminal</strong></summary>
+## Required scopes
 
-#### Terminal
+**Bot token:** `app_mentions:read`, `channels:history`, `groups:history`,
+`im:history`, `im:read`, `im:write`, `chat:write`, `reactions:read`,
+`reactions:write`, `users:read`, `assistant:write`.
 
-```sh
-npm start
-```
+**User token (for Real-Time Search):** `search:read` (and its
+`search:read.public` / `.private` / `.im` / `.mpim` variants),
+`channels:read`, `groups:read`, `users:read`.
 
-</details>
-
-<details><summary><strong>Using OAuth HTTP Server (with ngrok)</strong></summary>
-
-#### OAuth HTTP Server
-
-This mode uses an HTTP server instead of Socket Mode, which is required for OAuth-based distribution.
-
-1. Install [ngrok](https://ngrok.com/download) and start a tunnel:
-
-```sh
-ngrok http 3000
-```
-
-2. Copy the `https://*.ngrok-free.app` URL from the ngrok output.
-
-<details><summary><strong>Using Slack CLI</strong></summary>
-
-#### Slack CLI
-
-3. Update `manifest.json` for HTTP mode:
-   - Set `socket_mode_enabled` to `false`
-   - Replace `ngrok-free.app` with your ngrok domain (e.g. `YOUR_NGROK_SUBDOMAIN.ngrok-free.app`)
-
-4. Create a new local dev app:
-
-```sh
-slack install -E local
-```
-
-5. _(Slack CLI < v4.1.0 only)_ Enable MCP for your app:
-   - Run `slack app settings` to open your app's settings
-   - Navigate to **Agents & AI Apps** in the left-side navigation
-   - Toggle **Model Context Protocol** on
-
-6. Update your `.env` OAuth environment variables:
-   - Run `slack app settings` to open App Settings
-   - Copy **Client ID**, **Client Secret**, and **Signing Secret**
-   - Update `SLACK_REDIRECT_URI` in `.env` with your ngrok domain
-
-```sh
-SLACK_CLIENT_ID=YOUR_CLIENT_ID
-SLACK_CLIENT_SECRET=YOUR_CLIENT_SECRET
-SLACK_REDIRECT_URI=https://YOUR_NGROK_SUBDOMAIN.ngrok-free.app/slack/oauth_redirect
-SLACK_SIGNING_SECRET=YOUR_SIGNING_SECRET
-```
-
-7. Start the app:
-
-```sh
-slack run app-oauth.js
-```
-
-8. Click the install URL printed in the terminal to install the app to your workspace via OAuth.
-
-</details>
-
-<details><summary><strong>Using the Terminal</strong></summary>
-
-#### Terminal
-
-3. Create your Slack app at [api.slack.com/apps/new](https://api.slack.com/apps/new) using [`manifest.json`](./manifest.json). Before pasting the manifest, set `socket_mode_enabled` to `false` and replace `ngrok-free.app` with your ngrok domain.
-
-4. Install the app to your workspace and copy the following values into your `.env`:
-   - **Signing Secret** — from _Basic Information_
-   - **Bot User OAuth Token** — from _OAuth & Permissions_
-   - **Client ID** and **Client Secret** — from _Basic Information_
-
-```sh
-SLACK_SIGNING_SECRET=YOUR_SIGNING_SECRET
-SLACK_BOT_TOKEN=xoxb-YOUR_BOT_TOKEN
-SLACK_CLIENT_ID=YOUR_CLIENT_ID
-SLACK_CLIENT_SECRET=YOUR_CLIENT_SECRET
-SLACK_REDIRECT_URI=https://YOUR_NGROK_SUBDOMAIN.ngrok-free.app/slack/oauth_redirect
-```
-
-Replace `your-subdomain` in `SLACK_REDIRECT_URI` with your ngrok subdomain.
-
-5. Start the app:
-
-```sh
-node app-oauth.js
-```
-
-6. Click the install URL printed in the terminal to install the app to your workspace via OAuth.
-
-</details>
-
-> **Note:** Each time ngrok restarts, it generates a new URL. You'll need to update the ngrok domain in `manifest.json`, `SLACK_REDIRECT_URI` in your `.env`, and re-install the app.
-
-</details>
-
-### Using the App
-
-Once the agent is running, there are several ways to interact:
-
-**App Home** — Open the agent in Slack and click the _Home_ tab. You'll see a welcome message with instructions on how to interact.
-
-**Direct Messages** — Open a DM with the agent. You'll see suggested prompts like _Write a Message_, _Summarize_, and _Brainstorm_ — pick one or type your own message. The agent replies in a thread. Send follow-up messages in the same thread and the agent will maintain the full conversation context.
-
-**Channel @mentions** — Invite the agent to a channel by typing `/invite @agent-name` in the message box, then @mention it followed by your message. The agent responds in a thread so the channel stays clean.
-
-**Assistant Panel** — Click _Add Agent_ in the top-right corner of Slack, select the agent from the list, then pick a suggested prompt or type a message.
-
-### Linting
-
-```sh
-# Run Biome for linting and formatting
-npm run lint
-
-# Auto-fix lint and format issues
-npm run lint:fix
-```
-
-### Testing
-
-```sh
-# Run unit tests
-npm test
-```
-
-## Project Structure
-
-### `manifest.json`
-
-`manifest.json` is a configuration for Slack apps. With a manifest, you can create an app with a pre-defined configuration, or adjust the configuration of an existing app.
-
-### `app.js`
-
-`app.js` is the entry point for the application and is the file you'll run to start the server. This project aims to keep this file as thin as possible, primarily using it as a way to route inbound requests.
-
-### `app-oauth.js`
-
-`app-oauth.js` is an alternative entry point that runs the app in HTTP mode instead of Socket Mode. This is intended for deployments that use OAuth for app distribution. See the OAuth HTTP Server section under Development for setup instructions.
-
-### `/listeners`
-
-Every incoming request is routed to a "listener". This directory groups each listener based on the Slack Platform feature used.
-
-**`/listeners/events`** — Handles incoming events:
-
-* `app-home-opened.js` — Publishes the App Home view, or pins suggested prompts to the agent DM Messages tab (branches on `event.tab`).
-* `app-mentioned.js` — Responds to @mentions in channels.
-* `message.js` — Responds to direct messages from users.
-
-**`/listeners/actions`** — Handles interactive components:
-
-* `feedback-buttons.js` — Handles thumbs up/down feedback on agent responses.
-
-**`/listeners/views`** — Builds Block Kit views:
-
-* `app-home-builder.js` — Constructs the App Home Block Kit view.
-* `feedback-builder.js` — Creates the feedback button block attached to responses.
-
-### `/agent`
-
-The `agent.js` file defines the OpenAI Agents SDK Agent with a system prompt, personality, and tool configuration.
-
-The `deps.js` file defines the `AgentDeps` class passed to the agent at runtime, providing access to the Slack client and conversation context.
-
-The `tools` directory contains one example tool (emoji reaction) defined using `tool()` from `@openai/agents`. Add your own tools to customize the agent for your use case.
-
-### `/thread-context`
-
-The `store.js` file implements an in-memory conversation history store, keyed by channel and thread. This enables multi-turn conversations where the agent remembers previous context within a thread. The store has TTL-based cleanup (24 hours) and a max entry limit (1000).
-
-## Troubleshooting
-
-### MCP Server connection error: `App is not enabled for Slack MCP server access`
-
-If you see an error like:
+## Project layout
 
 ```
-Error: Streamable HTTP error: Error POSTing to endpoint: {"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"App is not enabled for Slack MCP server access. Please enable it here: https://api.slack.com/apps/YOUR_APP_ID/app-assistant"}}
+app.js                     Socket Mode entry point
+lib/
+  db.js                    SQLite store (offers, needs, match state)
+  send-prompt.js           Groq wrapper (classify + rank)
+  matcher.js               candidate gathering, RTS search, ranking
+listeners/
+  events/message-ingest.js classify every channel message; run the matcher
+  actions/match-actions.js consent-first state machine (confirm → consent → intro)
+  views/                   Block Kit: match card, consent DM, App Home
+scripts/seed.js            demo history seeder
 ```
-
-This means the Slack MCP feature has not been enabled for your app. There is no manifest property for this yet, so it must be toggled on manually:
-
-1. Run `slack app settings` to open your app's settings page (or visit [api.slack.com/apps](https://api.slack.com/apps) and select your app)
-2. Navigate to **Agents & AI Apps** in the left-side navigation
-3. Toggle **Slack Model Context Protocol** on

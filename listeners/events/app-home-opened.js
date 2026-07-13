@@ -31,21 +31,25 @@ export async function handleAppHomeOpened({ client, event, context, logger }) {
     }
 
     const userId = /** @type {string} */ (context.userId);
-    let installUrl = null;
-    let isConnected = false;
-
-    if (process.env.SLACK_CLIENT_ID) {
-      if (context.userToken) {
-        isConnected = true;
-      } else if (process.env.SLACK_REDIRECT_URI) {
-        const base = new URL(process.env.SLACK_REDIRECT_URI);
-        installUrl = `${base.origin}/slack/install`;
-      }
-    }
-
-    const view = buildAppHomeView(installUrl, isConnected);
-    await client.views.publish({ user_id: userId, view });
+    await client.views.publish({ user_id: userId, view: buildAppHomeView() });
   } catch (e) {
     logger.error(`Failed to handle app_home_opened: ${e}`);
+  }
+}
+
+/**
+ * Publish (refresh) the Loop dashboard for a specific user. Safe to call after
+ * any need status change; failures are logged and swallowed so they never break
+ * the triggering flow.
+ * @param {import('@slack/web-api').WebClient} client
+ * @param {string | undefined | null} userId
+ * @returns {Promise<void>}
+ */
+export async function publishHomeView(client, userId) {
+  if (!userId) return;
+  try {
+    await client.views.publish({ user_id: userId, view: buildAppHomeView() });
+  } catch (e) {
+    console.error(`Failed to refresh Home for ${userId}: ${e}`);
   }
 }

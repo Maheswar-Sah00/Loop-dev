@@ -5,6 +5,11 @@
 .env*
 !.env.sample
 
+# SQLite
+loop.db
+loop.db-shm
+loop.db-wal
+
 # Logs
 logs/
 

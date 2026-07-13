@@ -10,20 +10,22 @@ import { OpenAI } from 'openai';
 
 import { addEmojiReaction } from './tools/index.js';
 
-// This project uses the OpenAI Agents SDK, but we point it at Gemini's
-// OpenAI-compatible endpoint so it can run on a GEMINI_API_KEY.
-const geminiClient = new OpenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+// This project uses the OpenAI Agents SDK, but we point it at Groq's
+// OpenAI-compatible endpoint so it can run on a free GROQ_API_KEY.
+const groqClient = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
 });
-setDefaultOpenAIClient(geminiClient);
-// Gemini's compatible endpoint only supports Chat Completions, not the
+setDefaultOpenAIClient(groqClient);
+// Groq's compatible endpoint only supports Chat Completions, not the
 // Responses API the SDK uses by default.
 setOpenAIAPI('chat_completions');
 // Tracing exports to OpenAI and needs an OpenAI key; disable it.
 setTracingDisabled(true);
 
-const MODEL = 'gemini-2.5-flash';
+// A tool-calling capable Groq model (needed for the emoji + MCP tools).
+// llama-3.3-70b emits malformed tool calls on Groq; gpt-oss-120b is reliable.
+const MODEL = 'openai/gpt-oss-120b';
 
 const SYSTEM_PROMPT = `\
 You are a friendly Slack assistant. You help people by answering questions, \
